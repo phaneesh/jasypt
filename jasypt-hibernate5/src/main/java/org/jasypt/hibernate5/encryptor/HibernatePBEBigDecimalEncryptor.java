@@ -34,12 +34,6 @@ import org.jasypt.salt.SaltGenerator;
  * eligible for use from Hibernate. 
  * </p>
  * <p>
- * This class acts as a wrapper on a <tt>PBEBigDecimalEncryptor</tt>, allowing
- * to be set a <b>registered name</b> (see {@link #setRegisteredName(String)})
- * and performing the needed registry operations against the 
- * {@link HibernatePBEEncryptorRegistry}.
- * </p>
- * <p>
  * <b>It is not mandatory that a <tt>PBEBigDecimalEncryptor</tt> be explicitly set
  * with {@link #setEncryptor(PBEBigDecimalEncryptor)}</b>. If not, a
  * <tt>StandardPBEBigDecimalEncryptor</tt> object will be created internally
@@ -106,15 +100,7 @@ import org.jasypt.salt.SaltGenerator;
  *    &lt;/typedef>
  * </pre>
  * </p>
- * <p>
- * An important thing to note is that, when using <tt>HibernatePBEBigDecimalEncryptor</tt>
- * objects this way to wrap <tt>PBEBigDecimalEncryptor</tt>s, <u>it is not
- * necessary to deal with {@link HibernatePBEEncryptorRegistry}</u>, 
- * because <tt>HibernatePBEBigDecimalEncryptor</tt> objects get automatically registered
- * in the encryptor registry when their {@link #setRegisteredName(String)}
- * method is called.
- * </p>
- * 
+ *
  * @since 1.9.0
  * 
  * @author Chus Picos
@@ -336,25 +322,6 @@ public final class HibernatePBEBigDecimalEncryptor {
                     "Encryptor has not been set into Hibernate wrapper");
         }
         return this.encryptor.decrypt(encryptedMessage);
-    }
-    
-
-    
-    /**
-     * Sets the registered name of the encryptor and adds it to the registry.
-     * 
-     * @param registeredName the name with which the encryptor will be
-     *                       registered.
-     */
-    public void setRegisteredName(final String registeredName) {
-        if (this.registeredName != null) {
-            // It had another name before, we have to clean
-            HibernatePBEEncryptorRegistry.getInstance().
-                    unregisterHibernatePBEBigDecimalEncryptor(this.registeredName);
-        }
-        this.registeredName = registeredName;
-        HibernatePBEEncryptorRegistry.getInstance().
-                registerHibernatePBEBigDecimalEncryptor(this);
     }
 
     /**

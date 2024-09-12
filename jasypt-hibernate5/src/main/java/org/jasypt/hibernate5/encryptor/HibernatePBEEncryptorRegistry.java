@@ -20,11 +20,13 @@
 package org.jasypt.hibernate5.encryptor;
 
 import java.util.HashMap;
-
+import java.util.Map;
+import java.util.Objects;
 import org.jasypt.encryption.pbe.PBEBigDecimalEncryptor;
 import org.jasypt.encryption.pbe.PBEBigIntegerEncryptor;
 import org.jasypt.encryption.pbe.PBEByteEncryptor;
 import org.jasypt.encryption.pbe.PBEStringEncryptor;
+import org.jboss.logging.MDC;
 
 /**
  * <p>
@@ -84,19 +86,25 @@ import org.jasypt.encryption.pbe.PBEStringEncryptor;
  */
 public final class HibernatePBEEncryptorRegistry {
 
-    
+
     // The singleton instance
     private static final HibernatePBEEncryptorRegistry instance = 
         new HibernatePBEEncryptorRegistry();
-    
-    
-    // Registry maps
-    private final HashMap stringEncryptors = new HashMap();
-    private final HashMap bigIntegerEncryptors = new HashMap();
-    private final HashMap bigDecimalEncryptors = new HashMap();
-    private final HashMap byteEncryptors = new HashMap();
-    
-    
+    public static final String TENANT_ID = "tenant.id";
+
+
+    // Registry maps for single hibernate session factory instance
+    private final Map<String, Object> stringEncryptors = new HashMap<>();
+    private final Map<String, Object> bigIntegerEncryptors = new HashMap<>();
+    private final Map<String, Object> bigDecimalEncryptors = new HashMap<>();
+    private final Map<String, Object> byteEncryptors = new HashMap<>();
+
+    // Registry maps for multiple hibernate session factory instances that might require different encryptors
+    private final Map<String, Map<String, Object>> multiStringEncryptors = new HashMap<>();
+    private final Map<String, Map<String, Object>> multiBigIntegerEncryptors = new HashMap<>();
+    private final Map<String, Map<String, Object>> multiBigDecimalEncryptors = new HashMap<>();
+    private final Map<String, Map<String, Object>> multiByteEncryptors = new HashMap<>();
+
     /**
      * Returns the singleton instance of the registry.
      * 
@@ -123,7 +131,7 @@ public final class HibernatePBEEncryptorRegistry {
             final String registeredName, final PBEStringEncryptor encryptor) {
         final HibernatePBEStringEncryptor hibernateEncryptor = 
             new HibernatePBEStringEncryptor(registeredName, encryptor);
-        this.stringEncryptors.put(registeredName, hibernateEncryptor);
+        registerHibernatePBEStringEncryptor(hibernateEncryptor);
     }
 
 
@@ -144,7 +152,36 @@ public final class HibernatePBEEncryptorRegistry {
         this.stringEncryptors.remove(name);
     }
 
-    
+    /**
+     * Registers a <tt>PBEStringEncryptor</tt> object with the specified
+     * name.
+     *
+     * @param registeredName the registered name.
+     * @param encryptor the encryptor to be registered.
+     */
+    public synchronized void registerPBEStringEncryptor(final String tenantId,
+        final String registeredName, final PBEStringEncryptor encryptor) {
+        final HibernatePBEStringEncryptor hibernateEncryptor =
+            new HibernatePBEStringEncryptor(registeredName, encryptor);
+        registerHibernatePBEStringEncryptor(tenantId, hibernateEncryptor);
+    }
+
+    // Not public: this is used from
+    // HibernatePBEStringEncryptor.setRegisteredName.
+    synchronized void registerHibernatePBEStringEncryptor(final String tenantId,
+        final HibernatePBEStringEncryptor hibernateEncryptor) {
+        multiStringEncryptors.getOrDefault(tenantId, new HashMap<>()).put(
+            hibernateEncryptor.getRegisteredName(),
+            hibernateEncryptor);
+    }
+
+
+    // Not public: this is used from
+    synchronized void unregisterHibernatePBEStringEncryptor(final String tenantId, final String name) {
+        if(multiStringEncryptors.containsKey(tenantId)) {
+            multiStringEncryptors.get(tenantId).remove(name);        }
+    }
+
     /**
      * Returns the <tt>PBEStringEncryptor</tt> registered with the specified
      * name (if exists).
@@ -156,16 +193,16 @@ public final class HibernatePBEEncryptorRegistry {
      */
     public synchronized PBEStringEncryptor getPBEStringEncryptor(
             final String registeredName) {
+        String tenantId = Objects.nonNull(MDC.get(TENANT_ID)) ? MDC.get(TENANT_ID).toString() : null;
+        if(Objects.nonNull(tenantId) && multiStringEncryptors.containsKey(tenantId)) {
+            final HibernatePBEStringEncryptor hibernateEncryptor =
+                (HibernatePBEStringEncryptor) multiStringEncryptors.get(tenantId).get(registeredName);
+            return Objects.isNull(hibernateEncryptor) ?  null : hibernateEncryptor.getEncryptor();
+        }
         final HibernatePBEStringEncryptor hibernateEncryptor = 
             (HibernatePBEStringEncryptor) this.stringEncryptors.get(registeredName);
-        if (hibernateEncryptor == null) {
-            return null;
-        }
-        return hibernateEncryptor.getEncryptor();
+        return Objects.isNull(hibernateEncryptor) ?  null : hibernateEncryptor.getEncryptor();
     }
-
-    
-
 
     /**
      * Registers a <tt>PBEBigIntegerEncryptor</tt> object with the specified
@@ -201,7 +238,40 @@ public final class HibernatePBEEncryptorRegistry {
         this.bigIntegerEncryptors.remove(name);
     }
 
-    
+    /**
+     * Registers a <tt>PBEBigIntegerEncryptor</tt> object with the specified
+     * name.
+     *
+     * @since 1.6
+     *
+     * @param registeredName the registered name.
+     * @param encryptor the encryptor to be registered.
+     */
+    public synchronized void registerPBEBigIntegerEncryptor(final String tenantId,
+        final String registeredName, final PBEBigIntegerEncryptor encryptor) {
+        final HibernatePBEBigIntegerEncryptor hibernateEncryptor =
+            new HibernatePBEBigIntegerEncryptor(registeredName, encryptor);
+        registerHibernatePBEBigIntegerEncryptor(tenantId, hibernateEncryptor);
+    }
+
+
+    // Not public: this is used from
+    // HibernatePBEBigIntegerEncryptor.setRegisteredName.
+    synchronized void registerHibernatePBEBigIntegerEncryptor(final String tenantId,
+        final HibernatePBEBigIntegerEncryptor hibernateEncryptor) {
+        multiBigIntegerEncryptors.getOrDefault(tenantId, new HashMap<>()).put(
+            hibernateEncryptor.getRegisteredName(),
+            hibernateEncryptor);
+    }
+
+    // Not public: this is used from
+    // HibernatePBEBigIntegerEncryptor.setRegisteredName.
+    synchronized void unregisterHibernatePBEBigIntegerEncryptor(final String tenantId, final String name) {
+        if(multiBigIntegerEncryptors.containsKey(tenantId)) {
+            multiBigIntegerEncryptors.get(tenantId).remove(name);
+        }
+    }
+
     /**
      * Returns the <tt>PBEBigIntegerEncryptor</tt> registered with the specified
      * name (if exists).
@@ -213,15 +283,16 @@ public final class HibernatePBEEncryptorRegistry {
      */
     public synchronized PBEBigIntegerEncryptor getPBEBigIntegerEncryptor(
             final String registeredName) {
+        String tenantId = Objects.nonNull(MDC.get(TENANT_ID)) ? MDC.get(TENANT_ID).toString() : null;
+        if(Objects.nonNull(tenantId) && multiBigIntegerEncryptors.containsKey(tenantId)) {
+            final HibernatePBEBigIntegerEncryptor hibernateEncryptor =
+                (HibernatePBEBigIntegerEncryptor) multiBigIntegerEncryptors.get(tenantId).get(registeredName);
+            return Objects.isNull(hibernateEncryptor) ?  null : hibernateEncryptor.getEncryptor();
+        }
         final HibernatePBEBigIntegerEncryptor hibernateEncryptor = 
             (HibernatePBEBigIntegerEncryptor) this.bigIntegerEncryptors.get(registeredName);
-        if (hibernateEncryptor == null) {
-            return null;
-        }
-        return hibernateEncryptor.getEncryptor();
+        return Objects.isNull(hibernateEncryptor) ?  null : hibernateEncryptor.getEncryptor();
     }
-
-
 
     /**
      * Registers a <tt>PBEBigDecimalEncryptor</tt> object with the specified
@@ -257,6 +328,39 @@ public final class HibernatePBEEncryptorRegistry {
         this.bigDecimalEncryptors.remove(name);
     }
 
+    /**
+     * Registers a <tt>PBEBigDecimalEncryptor</tt> object with the specified
+     * name.
+     *
+     * @since 1.6
+     *
+     * @param registeredName the registered name.
+     * @param encryptor the encryptor to be registered.
+     */
+    public synchronized void registerPBEBigDecimalEncryptor(final String tenantId,
+        final String registeredName, final PBEBigDecimalEncryptor encryptor) {
+        final HibernatePBEBigDecimalEncryptor hibernateEncryptor =
+            new HibernatePBEBigDecimalEncryptor(registeredName, encryptor);
+        registerHibernatePBEBigDecimalEncryptor(tenantId, hibernateEncryptor);
+    }
+
+    // Not public: this is used from
+    // HibernatePBEBigDecimalEncryptor.setRegisteredName.
+    synchronized void registerHibernatePBEBigDecimalEncryptor(final String tenantId,
+        final HibernatePBEBigDecimalEncryptor hibernateEncryptor) {
+        multiBigDecimalEncryptors.getOrDefault(tenantId, new HashMap<>()).put(
+                hibernateEncryptor.getRegisteredName(),
+                hibernateEncryptor);
+    }
+
+
+    // Not public: this is used from
+    // HibernatePBEBigDecimalEncryptor.setRegisteredName.
+    synchronized void unregisterHibernatePBEBigDecimalEncryptor(final String tenantId, final String name) {
+        if(multiBigDecimalEncryptors.containsKey(tenantId)) {
+            multiBigDecimalEncryptors.get(tenantId).remove(name);
+        }
+    }
     
     /**
      * Returns the <tt>PBEBigDecimalEncryptor</tt> registered with the specified
@@ -269,17 +373,16 @@ public final class HibernatePBEEncryptorRegistry {
      */
     public synchronized PBEBigDecimalEncryptor getPBEBigDecimalEncryptor(
             final String registeredName) {
+        String tenantId = Objects.nonNull(MDC.get(TENANT_ID)) ? MDC.get(TENANT_ID).toString() : null;
+        if(Objects.nonNull(tenantId) && multiBigDecimalEncryptors.containsKey(tenantId)) {
+            final HibernatePBEBigDecimalEncryptor hibernateEncryptor =
+                (HibernatePBEBigDecimalEncryptor) multiBigDecimalEncryptors.get(tenantId).get(registeredName);
+            return Objects.isNull(hibernateEncryptor) ?  null : hibernateEncryptor.getEncryptor();
+        }
         final HibernatePBEBigDecimalEncryptor hibernateEncryptor = 
             (HibernatePBEBigDecimalEncryptor) this.bigDecimalEncryptors.get(registeredName);
-        if (hibernateEncryptor == null) {
-            return null;
-        }
-        return hibernateEncryptor.getEncryptor();
+        return Objects.isNull(hibernateEncryptor) ?  null : hibernateEncryptor.getEncryptor();
     }
-
-    
-
-
 
     /**
      * Registers a <tt>PBEByteEncryptor</tt> object with the specified
@@ -297,10 +400,6 @@ public final class HibernatePBEEncryptorRegistry {
         this.byteEncryptors.put(registeredName, hibernateEncryptor);
     }
 
-    
-
-
-    
     // Not public: this is used from 
     // HibernatePBEByteEncryptor.setRegisteredName.
     synchronized void registerHibernatePBEByteEncryptor(
@@ -310,13 +409,46 @@ public final class HibernatePBEEncryptorRegistry {
                 hibernateEncryptor);
     }
 
-    
     // Not public: this is used from 
     // HibernatePBEByteEncryptor.setRegisteredName.
     synchronized void unregisterHibernatePBEByteEncryptor(final String name) {
         this.byteEncryptors.remove(name);
     }
 
+
+    /**
+     * Registers a <tt>PBEByteEncryptor</tt> object with the specified
+     * name.
+     *
+     * @since 1.6
+     *
+     * @param registeredName the registered name.
+     * @param encryptor the encryptor to be registered.
+     */
+    public synchronized void registerPBEByteEncryptor(final String tenantId,
+        final String registeredName, final PBEByteEncryptor encryptor) {
+        final HibernatePBEByteEncryptor hibernateEncryptor =
+            new HibernatePBEByteEncryptor(registeredName, encryptor);
+        registerHibernatePBEByteEncryptor(tenantId, hibernateEncryptor);
+    }
+
+
+    // Not public: this is used from
+    // HibernatePBEByteEncryptor.setRegisteredName.
+    synchronized void registerHibernatePBEByteEncryptor(final String tenantId,
+        final HibernatePBEByteEncryptor hibernateEncryptor) {
+        multiByteEncryptors.getOrDefault(tenantId, new HashMap<>()).put(
+            hibernateEncryptor.getRegisteredName(),
+            hibernateEncryptor);
+    }
+
+    // Not public: this is used from
+    // HibernatePBEByteEncryptor.setRegisteredName.
+    synchronized void unregisterHibernatePBEByteEncryptor(final String tenantId, final String name) {
+        if (multiByteEncryptors.containsKey(tenantId)) {
+            multiByteEncryptors.get(tenantId).remove(name);
+        }
+    }
     
     /**
      * Returns the <tt>PBEByteEncryptor</tt> registered with the specified
@@ -329,12 +461,15 @@ public final class HibernatePBEEncryptorRegistry {
      */
     public synchronized PBEByteEncryptor getPBEByteEncryptor(
             final String registeredName) {
+        String tenantId = Objects.nonNull(MDC.get(TENANT_ID)) ? MDC.get(TENANT_ID).toString() : null;
+        if(Objects.nonNull(tenantId) && multiByteEncryptors.containsKey(tenantId)) {
+            final HibernatePBEByteEncryptor hibernateEncryptor =
+                (HibernatePBEByteEncryptor) multiByteEncryptors.get(tenantId).get(registeredName);
+            return Objects.isNull(hibernateEncryptor) ?  null : hibernateEncryptor.getEncryptor();
+        }
         final HibernatePBEByteEncryptor hibernateEncryptor = 
             (HibernatePBEByteEncryptor) this.byteEncryptors.get(registeredName);
-        if (hibernateEncryptor == null) {
-            return null;
-        }
-        return hibernateEncryptor.getEncryptor();
+        return Objects.isNull(hibernateEncryptor) ?  null : hibernateEncryptor.getEncryptor();
     }
     
 }
